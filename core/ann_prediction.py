@@ -20,13 +20,14 @@
  *                                                                         *
  ***************************************************************************/
 """
-from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt
+from PyQt4.QtCore import QSettings, QTranslator, qVersion, QCoreApplication, Qt, QVariant
 from PyQt4.QtGui import QAction, QIcon, QFileDialog, QTableWidgetItem
 # Initialize Qt resources from file resources.py
 import AnnPrediction.gui.resources
 # Import the code for the DockWidget
 from AnnPrediction.gui.ann_prediction_dockwidget import AnnPredictionDockWidget
 import os.path
+from qgis.core import QgsFeature, QgsVectorLayer, QgsField, QgsGeometry, QgsPoint, QgsMapLayerRegistry
 
 
 class AnnPrediction:
@@ -239,19 +240,42 @@ class AnnPrediction:
     def showDialog(self):
         filename = QFileDialog.getOpenFileName(caption='Open file', directory='/home')
         print(filename)
-        layer = self.iface.addVectorLayer(filename, "test", "ogr")
-        self.createTable(layer)
-        if not layer:
+        self.layer = self.iface.addVectorLayer(filename, "test", "ogr")
+        if not self.layer:
             print("Layer failed to load!")
+        self.provider = self.layer.dataProvider()
+        self.createTable(self.provider)
+        self.createLayersFromData(self.fields, self.data)
 
 
-    def createTable(self, layer):
-        self.provider = layer.dataProvider()
-        self.fields = self.readFields(self.provider.fields())
-        self.data = self.readData(self.fields)
+
+    def createLayersFromData(self, fields, data):
+        testLayer = QgsVectorLayer("Point", "temporary_points", "memory")
+        testProvider = testLayer.dataProvider()
+        testLayer.startEditing()
+
+        testProvider.addAttributes([
+            QgsField("lat", QVariant.Double),
+            QgsField("lon", QVariant.Double),
+            QgsField("test", QVariant.Double)  #TODO change to currentYear data
+        ])
+        features = []
+        for j in range(len(data[0])):
+            feature = QgsFeature()
+            feature.setGeometry(QgsGeometry.fromPoint(QgsPoint(data[1][j], data[0][j])))
+            feature.setAttributes([data[0][j], data[1][j], data[2][j]])  # TODO change to currentYear data
+            features.append(feature)
+        testProvider.addFeatures(features)
+        testLayer.commitChanges()
+        QgsMapLayerRegistry.instance().addMapLayer(testLayer)
+
+
+    def createTable(self, provider):
+        self.fields = self.readFields(provider.fields())
+        self.data = self.readData(self.fields, provider)
         self.dockwidget.attributeTable.clear()
         self.dockwidget.attributeTable.setColumnCount(len(self.fields))
-        self.dockwidget.attributeTable.setRowCount(self.provider.featureCount())
+        self.dockwidget.attributeTable.setRowCount(provider.featureCount())
         header = []
         for i in self.fields.values():
             header.append(i.name())
@@ -269,11 +293,11 @@ class AnnPrediction:
             i += 1
         return fieldsDict
 
-    def readData(self, fields):
+    def readData(self, fields, provider):
         data = []
         for i in range(len(fields)):
             data += [[]]
-        for feat in self.provider.getFeatures():
+        for feat in provider.getFeatures():
             attrs = feat.attributes()
             for i in range(len(attrs)):
                 data[i] += [attrs[i]]
