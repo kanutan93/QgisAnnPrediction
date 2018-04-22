@@ -4,4 +4,4 @@
 * python 2.7
 
 ### Installation:
-Copy to ${QGIS_HOME}/python/plugins/# QgisAnnPrediction
+Copy to ${QGIS_HOME}/python/plugins/
