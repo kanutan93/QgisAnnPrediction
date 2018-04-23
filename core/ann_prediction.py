@@ -27,7 +27,19 @@ import AnnPrediction.gui.resources
 # Import the code for the DockWidget
 from AnnPrediction.gui.ann_prediction_dockwidget import AnnPredictionDockWidget
 import os.path
-from qgis.core import QgsFeature, QgsVectorLayer, QgsField, QgsGeometry, QgsPoint, QgsMapLayerRegistry
+from qgis.core import QgsCategorizedSymbolRendererV2, \
+    QgsRendererCategoryV2, \
+    QgsSimpleFillSymbolLayerV2, \
+    QgsFeature, \
+    QgsVectorLayer, \
+    QgsField, \
+    QgsGeometry, \
+    QgsPoint, \
+    QgsMapLayerRegistry, \
+    QgsCoordinateReferenceSystem, \
+    QgsSymbolV2,\
+    QgsStyleV2, \
+    QgsGraduatedSymbolRendererV2
 
 
 class AnnPrediction:
@@ -239,7 +251,6 @@ class AnnPrediction:
 
     def showDialog(self):
         filename = QFileDialog.getOpenFileName(caption='Open file', directory='/home')
-        print(filename)
         self.layer = self.iface.addVectorLayer(filename, "test", "ogr")
         if not self.layer:
             print("Layer failed to load!")
@@ -250,25 +261,56 @@ class AnnPrediction:
 
 
     def createLayersFromData(self, fields, data):
-        testLayer = QgsVectorLayer("Point", "temporary_points", "memory")
-        testProvider = testLayer.dataProvider()
-        testLayer.startEditing()
+        latIdx = 0
+        lonIdx = 1
+        currentYearIdx = 2
 
-        testProvider.addAttributes([
-            QgsField("lat", QVariant.Double),
-            QgsField("lon", QVariant.Double),
-            QgsField("test", QVariant.Double)  #TODO change to currentYear data
-        ])
-        features = []
-        for j in range(len(data[0])):
-            feature = QgsFeature()
-            feature.setGeometry(QgsGeometry.fromPoint(QgsPoint(data[1][j], data[0][j])))
-            feature.setAttributes([data[0][j], data[1][j], data[2][j]])  # TODO change to currentYear data
-            features.append(feature)
-        testProvider.addFeatures(features)
-        testLayer.commitChanges()
-        QgsMapLayerRegistry.instance().addMapLayer(testLayer)
+        s = QSettings()
+        default_value = s.value("/Projections/defaultBehaviour")
+        s.setValue("/Projections/defaultBehaviour", "useProject")
 
+        style = QgsStyleV2().defaultStyle()
+        defaultColorRampNames = style.colorRampNames()
+        ramp = style.colorRamp(defaultColorRampNames[22]) #spectral
+
+        for field in self.fields.values()[2::5]:
+            yearLayer = QgsVectorLayer("Point", field.name(), "memory")
+            crs = yearLayer.crs()
+            crs.createFromId(4326)
+            yearLayer.setCrs(crs)
+            yearProvider = yearLayer.dataProvider()
+            yearLayer.startEditing()
+
+            yearProvider.addAttributes([
+                QgsField("GID_LAT", QVariant.Double),
+                QgsField("GID_LON", QVariant.Double),
+                QgsField(field.name(), QVariant.Double)
+            ])
+            features = []
+            for j in range(len(data[0])):
+                feature = QgsFeature()
+                feature.setGeometry(QgsGeometry.fromPoint(QgsPoint(data[lonIdx][j], data[latIdx][j])))
+                feature.setAttributes([data[latIdx][j], data[lonIdx][j], data[currentYearIdx][j]])
+                features.append(feature)
+            yearProvider.addFeatures(features)
+            yearLayer.commitChanges()
+            QgsMapLayerRegistry.instance().addMapLayer(yearLayer)
+            self.categorizeLayer(yearLayer, field.name(), ramp, len(data[0]))
+
+            currentYearIdx += 1
+
+        s.setValue("/Projections/defaultBehaviour", default_value)
+
+
+
+    def categorizeLayer(self, layer, fieldName, ramp, numberOfClasses):
+        renderer = QgsGraduatedSymbolRendererV2()
+        renderer.setClassAttribute(fieldName)
+        renderer.setMode(QgsGraduatedSymbolRendererV2.EqualInterval)
+        renderer.updateClasses(layer, QgsGraduatedSymbolRendererV2.EqualInterval, numberOfClasses)
+        renderer.updateColorRamp(ramp, inverted=True)
+        layer.setRendererV2(renderer)
+        layer.triggerRepaint()
 
     def createTable(self, provider):
         self.fields = self.readFields(provider.fields())
