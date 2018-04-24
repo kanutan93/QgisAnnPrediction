@@ -40,6 +40,8 @@ from qgis.core import QgsCategorizedSymbolRendererV2, \
     QgsSymbolV2,\
     QgsStyleV2, \
     QgsGraduatedSymbolRendererV2
+import csv
+import numpy as np
 
 
 class AnnPrediction:
@@ -248,6 +250,7 @@ class AnnPrediction:
 
     def addConnects(self):
         self.dockwidget.addVectorLayersButton.clicked.connect(self.showDialog)
+        self.dockwidget.exportToCSV.clicked.connect(self.exportToCSV)
 
     def showDialog(self):
         filename = QFileDialog.getOpenFileName(caption='Open file', directory='/home')
@@ -258,6 +261,17 @@ class AnnPrediction:
         self.createTable(self.provider)
         self.createLayersFromData(self.fields, self.data)
 
+
+    def exportToCSV(self):
+        if(self.data != None):
+            field_names = [field.name() for field in self.fields.values()]
+            with open('/home/dima/.qgis2/python/plugins/AnnPrediction/export.txt', 'wb') as f:
+                print(f)
+                dw = csv.DictWriter(f, field_names, delimiter=';')
+                dw.writeheader()
+                revertedData = np.asfarray(self.data, dtype=np.float32).transpose().tolist()
+                for row in revertedData:
+                    dw.writerow(dict(zip(field_names, row)))
 
 
     def createLayersFromData(self, fields, data):

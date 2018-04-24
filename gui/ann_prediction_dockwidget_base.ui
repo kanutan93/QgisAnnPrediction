@@ -56,6 +56,13 @@
         </widget>
        </item>
        <item>
+        <widget class="QPushButton" name="exportToCSV">
+         <property name="text">
+          <string>Export to CSV</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QGroupBox" name="settingsGroupBox">
          <property name="title">
           <string>Settings</string>
