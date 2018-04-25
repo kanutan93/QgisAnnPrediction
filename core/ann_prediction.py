@@ -42,6 +42,7 @@ from qgis.core import QgsCategorizedSymbolRendererV2, \
     QgsGraduatedSymbolRendererV2
 import csv
 import numpy as np
+import pandas as pd
 
 
 class AnnPrediction:
@@ -265,7 +266,7 @@ class AnnPrediction:
     def exportToCSV(self):
         if(self.data != None):
             field_names = [field.name() for field in self.fields.values()]
-            with open('/home/dima/.qgis2/python/plugins/AnnPrediction/export.txt', 'wb') as f:
+            with open('/home/dima/.qgis2/python/plugins/AnnPrediction/export.csv', 'wb') as f:
                 print(f)
                 dw = csv.DictWriter(f, field_names, delimiter=';')
                 dw.writeheader()
