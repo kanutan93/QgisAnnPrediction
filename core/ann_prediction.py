@@ -255,20 +255,22 @@ class AnnPrediction:
         self.dockwidget.exportToCSV.clicked.connect(self.exportToCSV)
         self.dockwidget.train.clicked.connect(self.train)
         self.dockwidget.predict.clicked.connect(self.predict)
+        self.dockwidget.activationFunction.addItems(['relu', 'sigmoid', 'tanh'])
 
     def showDialog(self):
+        self.predictedIdx = 0
         filename = QFileDialog.getOpenFileName(caption='Open file', directory='/home')
         self.layer = self.iface.addVectorLayer(filename, "test", "ogr")
         if not self.layer:
             print("Layer failed to load!")
         self.provider = self.layer.dataProvider()
         self.createTable(self.provider)
-        # self.createLayersFromData(self.fields, self.data)
+        self.createLayersFromData(self.fields, self.data)
 
 
     def exportToCSV(self):
         if(self.data != None):
-            field_names = [field.name() for field in self.fields.values()]
+            field_names = [field for field in self.fields.values()]
             with open('/home/dima/.qgis2/python/plugins/AnnPrediction/export.csv', 'wb') as f:
                 print(f)
                 dw = csv.DictWriter(f, field_names, delimiter=';')
@@ -279,19 +281,20 @@ class AnnPrediction:
 
     def train(self):
         revertedData = np.asfarray(self.data, dtype=np.float32).transpose().tolist()
-        field_names = [field.name() for field in self.fields.values()]
+        field_names = [field for field in self.fields.values()]
         self.dataframe = pd.DataFrame(data=revertedData, columns=field_names)
         dataset = self.dataframe.values
         config = {
             'neuronsPerLayer': 64,
-            'activationFunction': 'relu',
-            'hiddenLayers': 5,
-            'epochs': 500,
-            'learningRate': 0.1,
+            'activationFunction': self.dockwidget.activationFunction.currentText(),
+            'hiddenLayers': self.dockwidget.hiddenLayers.value(),
+            'epochs': self.dockwidget.epochs.value(),
+            'learningRate': self.dockwidget.learningRate.value(),
             'decay': 1e-6,
-            'momentum': 0.9,
+            'momentum': self.dockwidget.momentum.value(),
             'nesterov': True
         }
+        print(config)
         self.nnKeras = NnKeras(dataset, self.dataframe.shape[0], self.dataframe.shape[1], config)
         self.model = self.nnKeras.train()
         print('trained')
@@ -300,9 +303,13 @@ class AnnPrediction:
     def predict(self):
         inputPredict = self.nnKeras.dataset.transpose()[self.nnKeras.columnsCount - 1:self.nnKeras.columnsCount,:self.nnKeras.rowsCount]  # Last element etc 2005 year
         outputPredict = self.nnKeras.predict(self.model, inputPredict)
-        self.data = np.insert(self.data, len(self.data), outputPredict, axis=0)
+        self.data = np.insert(self.data, len(self.data), outputPredict, axis=0).tolist()
         self.addPredictToTable(self.provider)
         self.createPredictedLayer(self.data)
+        newFields = self.fields.values()
+        newFields.append('predicted-' + str(self.predictedIdx))
+        self.fields = self.readFields(newFields)
+        self.predictedIdx += 1
 
     def createPredictedLayer(self, data):
         latIdx = 0
@@ -315,7 +322,7 @@ class AnnPrediction:
         style = QgsStyleV2().defaultStyle()
         defaultColorRampNames = style.colorRampNames()
         ramp = style.colorRamp(defaultColorRampNames[22])  # spectral
-        yearLayer = QgsVectorLayer("Point", "predicted", "memory")
+        yearLayer = QgsVectorLayer("Point", 'predicted-' + str(self.predictedIdx), "memory")
         crs = yearLayer.crs()
         crs.createFromId(4326)
         yearLayer.setCrs(crs)
@@ -325,7 +332,7 @@ class AnnPrediction:
         yearProvider.addAttributes([
             QgsField("GID_LAT", QVariant.Double),
             QgsField("GID_LON", QVariant.Double),
-            QgsField("predicted", QVariant.Double)
+            QgsField("predicted-" + str(self.predictedIdx), QVariant.Double)
         ])
         features = []
         for j in range(len(data[0])):
@@ -336,7 +343,7 @@ class AnnPrediction:
         yearProvider.addFeatures(features)
         yearLayer.commitChanges()
         QgsMapLayerRegistry.instance().addMapLayer(yearLayer)
-        # self.categorizeLayer(yearLayer, "predicted", ramp, len(data[0]))
+        self.categorizeLayer(yearLayer, 'predicted-' + str(self.predictedIdx), ramp, len(data[0]))
 
     def createLayersFromData(self, fields, data):
         latIdx = 0
@@ -352,7 +359,7 @@ class AnnPrediction:
         ramp = style.colorRamp(defaultColorRampNames[22]) #spectral
 
         for field in self.fields.values()[2::5]:
-            yearLayer = QgsVectorLayer("Point", field.name(), "memory")
+            yearLayer = QgsVectorLayer("Point", field, "memory")
             crs = yearLayer.crs()
             crs.createFromId(4326)
             yearLayer.setCrs(crs)
@@ -362,7 +369,7 @@ class AnnPrediction:
             yearProvider.addAttributes([
                 QgsField("GID_LAT", QVariant.Double),
                 QgsField("GID_LON", QVariant.Double),
-                QgsField(field.name(), QVariant.Double)
+                QgsField(field, QVariant.Double)
             ])
             features = []
             for j in range(len(data[0])):
@@ -373,7 +380,7 @@ class AnnPrediction:
             yearProvider.addFeatures(features)
             yearLayer.commitChanges()
             QgsMapLayerRegistry.instance().addMapLayer(yearLayer)
-            self.categorizeLayer(yearLayer, field.name(), ramp, len(data[0]))
+            self.categorizeLayer(yearLayer, field, ramp, len(data[0]))
 
             currentYearIdx += 1
 
@@ -396,22 +403,22 @@ class AnnPrediction:
         self.dockwidget.attributeTable.setRowCount(provider.featureCount())
         header = []
         for i in self.fields.values():
-            header.append(i.name())
-        header.append('predicted')
+            header.append(i)
+        header.append('predicted-' + str(self.predictedIdx))
         self.dockwidget.attributeTable.setHorizontalHeaderLabels(header)
         for i in range(len(self.data)):
             for j in range(len(self.data[i])):
                 self.dockwidget.attributeTable.setItem(j, i, QTableWidgetItem(unicode(self.data[i][j] or 'NULL')))
 
     def createTable(self, provider):
-        self.fields = self.readFields(provider.fields())
+        self.fields = self.readFields([field.name() for field in provider.fields()])
         self.data = self.readData(self.fields, provider)
         self.dockwidget.attributeTable.clear()
         self.dockwidget.attributeTable.setColumnCount(len(self.fields))
         self.dockwidget.attributeTable.setRowCount(provider.featureCount())
         header = []
         for i in self.fields.values():
-            header.append(i.name())
+            header.append(i)
         self.dockwidget.attributeTable.setHorizontalHeaderLabels(header)
         for i in range(len(self.data)):
             for j in range(len(self.data[i])):
